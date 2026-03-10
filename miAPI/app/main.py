@@ -1,12 +1,13 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, status, Depends
 from typing import Optional
 import asyncio
 from pydantic import BaseModel, Field
-
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
+import secrets
 
 # CREAR LA APLICACIÓN
 app = FastAPI(
-    title="API de Calificaciones TAI",
+    title="MI PRIMER API",
     description="Una API simple para gestionar calificaciones en TAI",
     version="1.0"
 )
@@ -41,21 +42,18 @@ async def bienvenidos():
 
 
 
-# ENDPOINTS ASÍNCRONOS
 @app.get("/v1/calificaciones", tags=["Asincronía"])
 async def calificaciones():
     await asyncio.sleep(2)
     return {"mensaje": "Tu calificación en TAI es 10"}
 
 
-# PARÁMETRO OBLIGATORIO
 @app.get("/v1/ParametroO", tags=["Parámetro obligatorio"])
 async def consulta_parametro_obligatorio(id: int):
     await asyncio.sleep(2)
     return {"Usuario consultado": id}
 
 
-# PARÁMETRO OPCIONAL
 @app.get("/v1/ParametroOP", tags=["Parámetro opcional"])
 async def consulta_parametro_opcional(id: Optional[int] = None):
     await asyncio.sleep(2)
@@ -102,6 +100,28 @@ async def agregar_usuario(usuario: UsuarioBase):
     }
 
 
+
+
+#SEGURIDAD CON HTTP BASIC 
+security = HTTPBasic() 
+def verificar_Peticion (credentials: HTTPBasicCredentials = Depends(security)):
+    usuarioAuth= secrets.compare_digest(credentials.username, "admin")
+    contraAuth= secrets.compare_digest(credentials.password, "belenvega")
+    
+    if not (usuarioAuth and contraAuth):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Credenciales inválidas",
+        )
+        
+    return credentials.username 
+    
+    
+    
+
+
+
+
 # CRUD - ACTUALIZAR USUARIO
 @app.put("/v1/Usuarios/{id}", tags=["CRUD usuarios"])
 async def actualizar_usuario(id: int, usuario_actualizado: dict):
@@ -124,9 +144,10 @@ async def actualizar_usuario(id: int, usuario_actualizado: dict):
     )
 
 
-# CRUD - ELIMINAR USUARIO
+# CRUD - ELIMINAR USUARIO (DELATE)
+
 @app.delete("/v1/Usuarios/{id}", tags=["CRUD usuarios"])
-async def eliminar_usuario(id: int):
+async def eliminar_usuario(id: int, usuarioAuth: str = Depends(verificar_Peticion)):
     await asyncio.sleep(2)
 
     for usuario in usuarios:
@@ -137,11 +158,14 @@ async def eliminar_usuario(id: int):
                 "message": "Usuario eliminado exitosamente",
                 "data": usuario
             }
-
     raise HTTPException(
         status_code=404,
         detail="Usuario no encontrado"
     )
+
+
+
+
 
 
 # Ejecutar con:

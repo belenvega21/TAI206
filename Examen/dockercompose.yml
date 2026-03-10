@@ -1,0 +1,8 @@
+services:
+  api:
+    build: .
+    container_name: server_fastapi
+    ports:
+      - "8000:5003"
+    volumes:
+      - ./app:/app/app
