@@ -1,64 +1,127 @@
-from fastapi import FastAPI, HTTPException, Depends
-from pydantic import BaseModel, Field
-from datetime import date
-from typing import List
-from fastapi.security import HTTPBasic, HTTPBasicCredentials
-import secrets
+from flask import Flask, request, jsonify
+from datetime import datetime
+from functools import wraps
 
-app = FastAPI(title="Sistema de Gestión de Citas Médicas")
-
-security = HTTPBasic()
+app = Flask(__name__)
 
 citas = []
+contador = 1
 
-class Cita(BaseModel):
-    nombre: str = Field(..., min_length=5, description="Nombre del paciente (mínimo 5 caracteres)")
-    fecha: date = Field(..., description="Fecha de la cita (no puede ser menor a la fecha actual)")
-    motivo: str = Field(..., max_length=100, description="Motivo de la cita (máximo 100 caracteres)")
-    confirmacion: bool = Field(default=False, description="Estado de confirmación de la cita")
+USUARIO = "root"
+PASSWORD = "1234"
 
-def verificar_credenciales(credentials: HTTPBasicCredentials = Depends(security)):
-    correct_username = secrets.compare_digest(credentials.username, "root")
-    correct_password = secrets.compare_digest(credentials.password, "1234")
-    if not (correct_username and correct_password):
-        raise HTTPException(status_code=401, detail="Credenciales inválidas")
-    return credentials
 
-@app.post("/citas", status_code=201)
-def crear_cita(cita: Cita):
-    if cita.fecha < date.today():
-        raise HTTPException(status_code=400, detail="La fecha no puede ser menor a la fecha actual")
-    
-    citas_mismo_dia = [c for c in citas if c.nombre == cita.nombre and c.fecha == cita.fecha]
+# -----------------------------
+# AUTENTICACIÓN
+# -----------------------------
+def verificar_auth(auth):
+    return auth and auth.username == USUARIO and auth.password == PASSWORD
+
+
+def requiere_auth(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        auth = request.authorization
+        if not verificar_auth(auth):
+            return jsonify({"mensaje": "Acceso no autorizado"}), 401
+        return f(*args, **kwargs)
+    return decorated
+
+
+# -----------------------------
+# CREAR CITA
+# -----------------------------
+@app.route('/citas', methods=['POST'])
+def crear_cita():
+    global contador
+
+    data = request.get_json()
+
+    nombre = data.get("nombre")
+    fecha = data.get("fecha")
+    motivo = data.get("motivo")
+
+    if not nombre or len(nombre) < 5:
+        return jsonify({"error": "El nombre debe tener minimo 5 caracteres"}), 400
+
+    if not motivo or len(motivo) > 100:
+        return jsonify({"error": "El motivo no debe exceder 100 caracteres"}), 400
+
+    try:
+        fecha_cita = datetime.strptime(fecha, "%Y-%m-%d").date()
+    except:
+        return jsonify({"error": "Formato de fecha incorrecto (YYYY-MM-DD)"}), 400
+
+    if fecha_cita < datetime.now().date():
+        return jsonify({"error": "La fecha no puede ser menor a la fecha actual"}), 400
+
+    citas_mismo_dia = [
+        c for c in citas if c["nombre"] == nombre and c["fecha"] == fecha
+    ]
+
     if len(citas_mismo_dia) >= 3:
-        raise HTTPException(status_code=400, detail="No se permiten más de 3 citas en el mismo día para el mismo paciente")
-    
+        return jsonify({"error": "No se permiten mas de 3 citas el mismo dia para el mismo paciente"}), 400
+
+    cita = {
+        "id": contador,
+        "nombre": nombre,
+        "fecha": fecha,
+        "motivo": motivo,
+        "confirmado": False
+    }
+
     citas.append(cita)
-    return {"mensaje": "Cita creada exitosamente"}
+    contador += 1
 
-@app.get("/citas", dependencies=[Depends(verificar_credenciales)])
+    return jsonify({
+        "mensaje": "Cita creada correctamente",
+        "cita": cita
+    }), 201
+
+
+# -----------------------------
+# LISTAR CITAS (PROTEGIDO)
+# -----------------------------
+@app.route('/citas', methods=['GET'])
+@requiere_auth
 def listar_citas():
-    return citas
+    return jsonify(citas)
 
-@app.put("/citas/confirmar/{nombre}/{fecha}")
-def confirmar_cita(nombre: str, fecha: date):
-    for cita in citas:
-        if cita.nombre == nombre and cita.fecha == fecha:
-            cita.confirmacion = True
-            return {"mensaje": "Cita confirmada exitosamente"}
-    raise HTTPException(status_code=404, detail="Cita no encontrada")
 
-@app.delete("/citas/{nombre}/{fecha}", dependencies=[Depends(verificar_credenciales)])
-def eliminar_cita(nombre: str, fecha: date):
+# -----------------------------
+# CONFIRMAR CITA
+# -----------------------------
+@app.route('/citas/<int:id>/confirmar', methods=['PUT'])
+def confirmar_cita(id):
     for cita in citas:
-        if cita.nombre == nombre and cita.fecha == fecha:
+        if cita["id"] == id:
+            cita["confirmado"] = True
+            return jsonify({
+                "mensaje": "Cita confirmada",
+                "cita": cita
+            })
+
+    return jsonify({"error": "Cita no encontrada"}), 404
+
+
+# -----------------------------
+# ELIMINAR CITA (PROTEGIDO)
+# -----------------------------
+@app.route('/citas/<int:id>', methods=['DELETE'])
+@requiere_auth
+def eliminar_cita(id):
+    global citas
+
+    for cita in citas:
+        if cita["id"] == id:
             citas.remove(cita)
-            return {"mensaje": "Cita eliminada exitosamente"}
-    raise HTTPException(status_code=404, detail="Cita no encontrada")
+            return jsonify({"mensaje": "Cita eliminada"})
+
+    return jsonify({"error": "Cita no encontrada"}), 404
 
 
-
-
-## Ejecutar con:
-# uvicorn main:app --reload
-# Documentación
+# -----------------------------
+# EJECUTAR SERVIDOR
+# -----------------------------
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000)
