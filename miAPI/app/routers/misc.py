@@ -1,66 +1,42 @@
-from typing import Optional
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.orm import Session
+from app.data.db import get_db
+from app.data.usuario import Usuario
 from app.models.usuario import UsuarioBase
-from app.data.database import usuarios
-import asyncio  
 
 router = APIRouter(
-    prefix="/v1",
-    tags=["Varios"],
-    
+    prefix="/misc",
+    tags=["Misc"]
 )
 
-# CONSULTAR TODOS LOS USUARIOS
-@router.get("/usuarios")
-async def consultar_usuarios():
-    return {
-        "status": "200",
-        "total": len(usuarios),
-        "data": usuarios
-    }
+#  AGREGAR USUARIO 
+@router.post("/usuarios", status_code=status.HTTP_201_CREATED)
+def agregar_usuario(usuario: UsuarioBase, db: Session = Depends(get_db)):
 
-# CONSULTAR POR ID (OBLIGATORIO)
-@router.get("/usuarios/{id}")
-async def consultar_usuario(id: int):
-    await asyncio.sleep(2)
-    
-    for usuario in usuarios:
-        if usuario["id"] == id:
-            return {
-                "Usuario consultado": id,
-                "Datos": usuario
-            }
+    # VALIDACIÓN (opcional, por nombre)
+    existente = db.query(Usuario).filter(Usuario.nombre == usuario.nombre).first()
 
-    raise HTTPException(
-        status_code=404,
-        detail="Usuario no encontrado"
+    if existente:
+        raise HTTPException(
+            status_code=400,
+            detail="El usuario ya existe"
+        )
+
+    # CREAR USUARIO
+    nuevo = Usuario(
+        nombre=usuario.nombre,
+        edad=usuario.edad
     )
 
-# CONSULTA OPCIONAL
-@router.get("/usuarios")
-async def consulta_opcional(id: Optional[int] = None):
-    if id is not None:
-        for usuario in usuarios:
-            if usuario["id"] == id:
-                return {"Datos": usuario}
-        return {"mensaje": "Usuario no encontrado"}
-
-    return {"aviso": "No se proporcionó ID"}
-
-# AGREGAR USUARIO
-@router.post("/usuarios")
-async def agregar_usuario(usuario: UsuarioBase):
-
-    for usr in usuarios:
-        if usr["id"] == usuario.id:
-            raise HTTPException(
-                status_code=400,
-                detail="El ID ya existe"
-            )
-
-    usuarios.append(usuario.dict())
+    db.add(nuevo)
+    db.commit()
+    db.refresh(nuevo)
 
     return {
-        "mensaje": "Usuario agregado",
-        "data": usuario
+        "message": "Usuario agregado desde misc",
+        "data": {
+            "id": nuevo.id,
+            "nombre": nuevo.nombre,
+            "edad": nuevo.edad
+        }
     }

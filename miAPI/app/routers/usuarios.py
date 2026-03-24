@@ -1,79 +1,96 @@
-import asyncio
-from app.models.usuario import UsuarioBase
 from fastapi import status, HTTPException, Depends, APIRouter
-from app.data.database import usuarios
-from app.security.auth import verificar_peticion
-
+from sqlalchemy.orm import Session
+from app.data.db import get_db
+from app.data.usuario import Usuario
+from app.models.usuario import UsuarioBase
 
 router = APIRouter(
     prefix="/v1/usuarios",
     tags=["CRUD HTTP"]
 )
 
-
-# CRUD - CONSULTAR USUARIOS
+#  CONSULTAR USUARIOS
 @router.get("/", status_code=status.HTTP_200_OK)
-async def consultar_usuarios():
+def leer_usuarios(db: Session = Depends(get_db)):
+    usuarios = db.query(Usuario).all()
+
     return {
         "total": len(usuarios),
-        "data": usuarios
+        "data": [
+            {
+                "id": u.id,
+                "nombre": u.nombre,
+                "edad": u.edad
+            } for u in usuarios
+        ]
     }
 
 
-# CRUD - AGREGAR USUARIO
+#  AGREGAR USUARIO
 @router.post("/", status_code=status.HTTP_201_CREATED)
-async def agregar_usuario(usuario: UsuarioBase):
+def crear_usuario(usuario: UsuarioBase, db: Session = Depends(get_db)):
 
-    for usr in usuarios:
-        if usr["id"] == usuario.id:
-            raise HTTPException(
-                status_code=400,
-                detail="El ID del usuario ya existe"
-            )
+    nuevoUsuario = Usuario(
+        nombre=usuario.nombre,
+        edad=usuario.edad
+    )
 
-    usuarios.append(usuario.dict())
+    db.add(nuevoUsuario)
+    db.commit()
+    db.refresh(nuevoUsuario)
 
     return {
         "message": "Usuario agregado exitosamente",
-        "datos": usuario
+        "data": {
+            "id": nuevoUsuario.id,
+            "nombre": nuevoUsuario.nombre,
+            "edad": nuevoUsuario.edad
+        }
     }
 
 
-# CRUD - ACTUALIZAR USUARIO
+# ACTUALIZAR USUARIO
 @router.put("/{id}", status_code=status.HTTP_200_OK)
-async def actualizar_usuario(id: int, usuario_actualizado: dict):
-    await asyncio.sleep(2)
+def actualizar_usuario(id: int, usuario_actualizado: UsuarioBase, db: Session = Depends(get_db)):
 
-    for usuario in usuarios:
-        if usuario["id"] == id:
-            usuario["nombre"] = usuario_actualizado.get("nombre", usuario["nombre"])
-            usuario["edad"] = usuario_actualizado.get("edad", usuario["edad"])
+    usuario = db.query(Usuario).filter(Usuario.id == id).first()
 
-            return {
-                "message": "Usuario actualizado exitosamente",
-                "data": usuario
-            }
+    if not usuario:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
 
-    raise HTTPException(
-        status_code=404,
-        detail="Usuario no encontrado"
-    )
+    usuario.nombre = usuario_actualizado.nombre
+    usuario.edad = usuario_actualizado.edad
+
+    db.commit()
+    db.refresh(usuario)
+
+    return {
+        "message": "Usuario actualizado",
+        "data": {
+            "id": usuario.id,
+            "nombre": usuario.nombre,
+            "edad": usuario.edad
+        }
+    }
 
 
-# CRUD - ELIMINAR USUARIO
+#  ELIMINAR USUARIO
 @router.delete("/{id}", status_code=status.HTTP_200_OK)
-async def eliminar_usuario(id: int, usuarioAuth: str = Depends(verificar_peticion)):
-    await asyncio.sleep(2)
+def eliminar_usuario(id: int, db: Session = Depends(get_db)):
 
-    for usuario in usuarios:
-        if usuario["id"] == id:
-            usuarios.remove(usuario)
-            return {
-                "message": "Usuario eliminado exitosamente",
-                "data": usuario
-            }
+    usuario = db.query(Usuario).filter(Usuario.id == id).first()
 
-    raise HTTPException(
-        status_code=404,
-        detail="Usuario no encontrado"
-    )
+    if not usuario:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+
+    db.delete(usuario)
+    db.commit()
+
+    return {
+        "message": "Usuario eliminado",
+        "data": {
+            "id": usuario.id,
+            "nombre": usuario.nombre,
+            "edad": usuario.edad
+        }
+    }
