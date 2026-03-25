@@ -9,7 +9,7 @@ router = APIRouter(
     tags=["CRUD HTTP"]
 )
 
-#  CONSULTAR USUARIOS
+#  GET TODOS
 @router.get("/", status_code=status.HTTP_200_OK)
 def leer_usuarios(db: Session = Depends(get_db)):
     usuarios = db.query(Usuario).all()
@@ -26,30 +26,48 @@ def leer_usuarios(db: Session = Depends(get_db)):
     }
 
 
-#  AGREGAR USUARIO
-@router.post("/", status_code=status.HTTP_201_CREATED)
-def crear_usuario(usuario: UsuarioBase, db: Session = Depends(get_db)):
+# GET POR ID
+@router.get("/{id}", status_code=status.HTTP_200_OK)
+def obtener_usuario(id: int, db: Session = Depends(get_db)):
 
-    nuevoUsuario = Usuario(
-        nombre=usuario.nombre,
-        edad=usuario.edad
-    )
+    usuario = db.query(Usuario).filter(Usuario.id == id).first()
 
-    db.add(nuevoUsuario)
-    db.commit()
-    db.refresh(nuevoUsuario)
+    if not usuario:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
 
     return {
-        "message": "Usuario agregado exitosamente",
         "data": {
-            "id": nuevoUsuario.id,
-            "nombre": nuevoUsuario.nombre,
-            "edad": nuevoUsuario.edad
+            "id": usuario.id,
+            "nombre": usuario.nombre,
+            "edad": usuario.edad
         }
     }
 
 
-# ACTUALIZAR USUARIO
+#  POST
+@router.post("/", status_code=status.HTTP_201_CREATED)
+def crear_usuario(usuario: UsuarioBase, db: Session = Depends(get_db)):
+
+    nuevo = Usuario(
+        nombre=usuario.nombre,
+        edad=usuario.edad
+    )
+
+    db.add(nuevo)
+    db.commit()
+    db.refresh(nuevo)
+
+    return {
+        "message": "Usuario creado",
+        "data": {
+            "id": nuevo.id,
+            "nombre": nuevo.nombre,
+            "edad": nuevo.edad
+        }
+    }
+
+
+# PUT 
 @router.put("/{id}", status_code=status.HTTP_200_OK)
 def actualizar_usuario(id: int, usuario_actualizado: UsuarioBase, db: Session = Depends(get_db)):
 
@@ -74,7 +92,35 @@ def actualizar_usuario(id: int, usuario_actualizado: UsuarioBase, db: Session = 
     }
 
 
-#  ELIMINAR USUARIO
+# PATCH ACTUALIZA 
+@router.patch("/{id}", status_code=status.HTTP_200_OK)
+def actualizar_parcial(id: int, usuario_data: dict, db: Session = Depends(get_db)):
+
+    usuario = db.query(Usuario).filter(Usuario.id == id).first()
+
+    if not usuario:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+
+    if "nombre" in usuario_data:
+        usuario.nombre = usuario_data["nombre"]
+
+    if "edad" in usuario_data:
+        usuario.edad = usuario_data["edad"]
+
+    db.commit()
+    db.refresh(usuario)
+
+    return {
+        "message": "Usuario actualizado parcialmente",
+        "data": {
+            "id": usuario.id,
+            "nombre": usuario.nombre,
+            "edad": usuario.edad
+        }
+    }
+
+
+# DELETE
 @router.delete("/{id}", status_code=status.HTTP_200_OK)
 def eliminar_usuario(id: int, db: Session = Depends(get_db)):
 
@@ -87,10 +133,7 @@ def eliminar_usuario(id: int, db: Session = Depends(get_db)):
     db.commit()
 
     return {
-        "message": "Usuario eliminado",
-        "data": {
-            "id": usuario.id,
-            "nombre": usuario.nombre,
-            "edad": usuario.edad
-        }
+        "message": "Usuario eliminado"
     }
+    
+    
